@@ -11,6 +11,10 @@ BASE_URL = "http://fund.eastmoney.com"
 FUND_LIST_URL = "%s/js/fundcode_search.js" % BASE_URL
 FUND_RANK_URL = "%s/data/rankhandler.aspx" % BASE_URL
 
+DEFAULT_HEADERS = {
+    "Referer": "http://fund.eastmoney.com/data/fundranking.html"
+}
+
 FUND_RANK_TITLES = ["基金代码", "基金简称", "基金编码", "日期",
                     "单位净值", "累计净值", "日增长率",
                     "近1周", "近1月", "近3月", "近6月", "近1年",
@@ -163,17 +167,15 @@ class FundRank(object):
         logging.info("Trying to get fund rank list "
                      "from %s..." % FUND_RANK_URL)
         try:
-            req = requests.get(FUND_RANK_URL, params=params)
+            req = requests.get(FUND_RANK_URL,
+                               headers=DEFAULT_HEADERS,
+                               params=params)
         except Exception as e:
             logging.error("Get rank list from %s "
                           "failed." % FUND_RANK_URL)
             raise e
 
         all_rank_txt = req.text
-        print "=" * 30
-        print type(req.text)
-        print req.encoding
-        print "=" * 30
         all_rank_txt = all_rank_txt[
             all_rank_txt.find('["'):all_rank_txt.rfind('"]') + 2]
         all_funds = json.loads(all_rank_txt)

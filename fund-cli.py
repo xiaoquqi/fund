@@ -67,10 +67,10 @@ def main():
     with open("fund-result.csv", "w") as fh:
         for line in fund_rank_list:
             #if type(line) is not str:
-            #    print line
-            #    print type(line.encode("ascii", "ignore"))
+            #    print(line)
+            #    print(type(line.encode("ascii", "ignore")))
             #    line = line.encode("ascii", "ignore")
-            print line
+            print(line)
             if type(line) is not str:
                 line = line.encode("utf8")
             fh.write(line + "\n")
