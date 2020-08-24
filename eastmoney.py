@@ -1,5 +1,11 @@
-# !/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
+"""This class if to collect data from https://fund.eastmoney.com/
+
+Use this class you can collect fund info, fund rank and fund addtional
+data like Sharpe Ratio on the web page.
+"""
 
 from datetime import datetime, timedelta
 import json
@@ -23,9 +29,168 @@ FUND_RANK_TITLES = ["code", "基金简称", "基金编码", "日期",
                     "近2年", "近3年", "今年来", "成立来", "成立时间",
                     "未知字段1", "未知字段2", "原费率", "折扣费率",
                     "未知字段3", "未知字段4", "未知字段5", "未知字段6"]
+FUND_TS_TITLES = ["夏普比率近一年", "夏普比率近二年", "夏普比率近三年"]
 
 # 所有-all 股票型-gp 混合型-hh 债券型-zq 指数型-zs 保本型-bb QDII-qdii LOF-lof
 FUND_TYPES = ["all", "gp", "hh", "zq", "zs", "bb", "qdii", "lof"]
+
+
+class FundRank(object):
+    """Get fund list and history rank"""
+
+    def __init__(self, ft="all", pn=1000, period="1y"):
+        """Intialization method
+
+        ft: fund type
+        pn: page number
+        period: search rank before given period
+        """
+
+        if ft not in FUND_TYPES:
+            raise Exception("Fund type is not supported, support "
+                            "fund types: %s" % FUND_TYPES)
+
+        self.ft = ft
+        self.pn = pn
+        self.period = period
+        self.start_date = DTWrapper.today_date()
+        self.end_date = DTWrapper.delta_today(period)
+
+    def list(self):
+        """Return pandas DataFrame type"""
+        funds = []
+        page_index = 1
+        # if current fund count < page number means no more data
+        curr_fund_count = self.pn
+
+        while curr_fund_count >= self.pn:
+            funds_in_page = self._get_list(page_index)
+
+            curr_fund_count = len(funds_in_page)
+            page_index += 1
+
+            funds += funds_in_page
+
+        fundrank_dt = pd.DataFrame(funds, columns=FUND_RANK_TITLES)
+        return fundrank_dt
+
+    def _get_list(self, page_index):
+        sc = "1nzf"
+        params = {
+            "op": "ph",
+            "dt": "kf",
+            "ft": self.ft,
+            "rs": "",
+            "gs": 0,
+            "sc": sc,
+            "st": "desc",
+            "sd": self.start_date,
+            "ed": self.end_date,
+            "qdii": "",
+            "tabSubtype": ",,,,,",
+            "pi": page_index,
+            "pn": self.pn,
+            "dx": 1
+        }
+        logging.info("Trying to get fund rank list "
+                     "from %s..." % FUND_RANK_URL)
+        try:
+            req = requests.get(FUND_RANK_URL,
+                               headers=DEFAULT_HEADERS,
+                               params=params)
+        except Exception as e:
+            logging.error("Get rank list from %s "
+                          "failed." % FUND_RANK_URL)
+            raise e
+
+        all_rank_txt = req.text
+        all_rank_txt = all_rank_txt[
+            all_rank_txt.find('["'):all_rank_txt.rfind('"]') + 2]
+        all_funds = json.loads(all_rank_txt)
+
+        # NOTE(Ray): After to json, the value is still string, use
+        # split convert to real list
+        ret_funds = []
+        for fund in all_funds:
+            ret_funds.append(fund.split(","))
+        return ret_funds
+
+
+class FundInfo(object):
+
+    def __init__(self, fund_codes):
+        self.fund_codes = fund_codes
+
+    def list(self):
+        """Return pandas DataFrame type"""
+
+        fund_dt = None
+        count = 0
+        for fund_code in self.fund_codes:
+            fund_info = self._get_info(fund_code)
+            if count == 0:
+                fund_dt = fund_info
+            else:
+                fund_dt = fund_dt.append(fund_info)
+            count = count + 1
+            logging.debug("Already got %s count funds." % count)
+
+        return fund_dt
+
+    def _get_info(self, fund_code):
+        fund_info_url = "%s/%s.html" % (FUND_DETAIL_BASE_URL,
+                                        fund_code)
+        logging.debug("Getting date from %s" % fund_info_url)
+        tables = pd.read_html(fund_info_url)
+        df = tables[1]
+        col1_df = df[[0, 1]]
+        col2_df = df[[2, 3]]
+        col1_df.set_index(0, inplace=True)
+        col2_df.set_index(2, inplace=True)
+        col1_df = col1_df.T
+        col2_df = col2_df.T
+        col1_df["code"] = fund_code
+        col2_df["code"] = fund_code
+        col1_df.set_index("code", inplace=True)
+        col2_df.set_index("code", inplace=True)
+        info_df = pd.concat([col1_df, col2_df], axis=1)
+        return info_df
+
+
+class FundTsData(object):
+    """Retrun fund addtional data like Sharpe Ratio"""
+
+    def __init__(self, fund_codes):
+        self.fund_codes = fund_codes
+
+    def list(self):
+        """Return pandas DataFrame type"""
+
+        fund_dt = None
+        count = 0
+        for fund_code in self.fund_codes:
+            fund_ts = self._get_ts(fund_code)
+            if count == 0:
+                fund_dt = fund_ts
+            else:
+                fund_dt = fund_dt.append(fund_ts)
+            count = count + 1
+            logging.debug("Already got %s count funds." % count)
+
+        fund_dt.columns = FUND_TS_TITLES
+        return fund_dt
+
+    def _get_ts(self, fund_code):
+        fund_info_url = "%s/tsdata_%s.html" % (FUND_DETAIL_BASE_URL,
+                                        fund_code)
+        logging.debug("Getting date from %s" % fund_info_url)
+        tables = pd.read_html(fund_info_url)
+        df = tables[1]
+        df["code"] = fund_code
+        df.set_index("code", inplace=True)
+        df.drop(u"基金风险指标", axis="columns", inplace=True)
+        info_df = df[1:]
+        return info_df
 
 
 class DTWrapper(object):
@@ -80,152 +245,3 @@ class DTWrapper(object):
             return num * 60 * 60 * 24 * 365
         else:
             raise Exception("Invalid delta fromat")
-
-
-class Fund(object):
-
-    def list(self):
-        """Return all fund list"""
-
-        try:
-            logging.info("Trying to get fund list "
-                         "from %s..." % FUND_LIST_URL)
-            req = requests.get(FUND_LIST_URL)
-            all_funds_txt = req.text
-        except Exception as e:
-            logging.error("Get fund list from %s "
-                          "failed." % FUND_LIST_URL)
-            raise e
-
-        logging.info("Get fund list from %s "
-                     "successfully." % FUND_LIST_URL)
-        logging.debug("Fund list %s returns: %s" % (
-            FUND_LIST_URL, all_funds_txt))
-
-        all_funds_txt = all_funds_txt[
-            all_funds_txt.find('=') + 2:all_funds_txt.rfind(';')]
-        all_funds = json.loads(all_funds_txt)
-
-        return all_funds
-
-
-class FundRank(object):
-    """Get fund list and history rank"""
-
-    def __init__(self, ft="all", pn=1000, period="1y"):
-        """Intialization method
-
-        ft: fund type
-        pn: page number
-        period: search rank before given period
-        """
-
-        if ft not in FUND_TYPES:
-            raise Exception("Fund type is not supported, support "
-                            "fund types: %s" % FUND_TYPES)
-
-        self.ft = ft
-        self.pn = pn
-        self.period = period
-        self.start_date = DTWrapper.today_date()
-        self.end_date = DTWrapper.delta_today(period)
-
-    def list(self):
-
-        funds = []
-        page_index = 1
-        # if current fund count < page number means no more data
-        curr_fund_count = self.pn
-
-        while curr_fund_count >= self.pn:
-            funds_in_page = self._get_list(page_index)
-
-            curr_fund_count = len(funds_in_page)
-            page_index += 1
-
-            funds += funds_in_page
-
-        #funds.insert(0, ",".join(FUND_RANK_TITLES))
-
-        fund_table = pd.DataFrame(funds, columns=FUND_RANK_TITLES)
-        print(fund_table)
-        fund_info_table = self._get_fund_info_list(funds)
-        print(fund_info_table)
-        print(pd.merge(fund_table, fund_info_table, on="code"))
-        return funds
-
-    def _get_list(self, page_index):
-        sc = "1nzf"
-        params = {
-            "op": "ph",
-            "dt": "kf",
-            "ft": self.ft,
-            "rs": "",
-            "gs": 0,
-            "sc": sc,
-            "st": "desc",
-            "sd": self.start_date,
-            "ed": self.end_date,
-            "qdii": "",
-            "tabSubtype": ",,,,,",
-            "pi": page_index,
-            "pn": self.pn,
-            "dx": 1
-        }
-        logging.info("Trying to get fund rank list "
-                     "from %s..." % FUND_RANK_URL)
-        try:
-            req = requests.get(FUND_RANK_URL,
-                               headers=DEFAULT_HEADERS,
-                               params=params)
-        except Exception as e:
-            logging.error("Get rank list from %s "
-                          "failed." % FUND_RANK_URL)
-            raise e
-
-        all_rank_txt = req.text
-        all_rank_txt = all_rank_txt[
-            all_rank_txt.find('["'):all_rank_txt.rfind('"]') + 2]
-        all_funds = json.loads(all_rank_txt)
-
-        # NOTE(Ray): After to json, the value is still string, use
-        # split convert to real list
-        ret_funds = []
-        for fund in all_funds:
-            ret_funds.append(fund.split(","))
-        return ret_funds
-
-    def _get_fund_info_list(self, funds):
-
-        funds_info = None
-        count = 0
-        for fund in funds[1:]:
-            fund_no = fund[0]
-            fund_info = self._get_fund_info(fund_no)
-            if count == 0:
-                funds_info = fund_info
-            else:
-                funds_info = funds_info.append(fund_info)
-
-            count = count + 1
-
-        return funds_info
-
-
-    def _get_fund_info(self, fund_no):
-        fund_info_url = "%s/%s.html" % (FUND_DETAIL_BASE_URL,
-                                        fund_no)
-        tables = pd.read_html(fund_info_url)
-        df = tables[1]
-        col1_df = df[[0, 1]]
-        col2_df = df[[2, 3]]
-        col1_df.set_index(0, inplace=True)
-        col2_df.set_index(2, inplace=True)
-        col1_df = col1_df.T
-        col2_df = col2_df.T
-        col1_df["code"] = fund_no
-        col2_df["code"] = fund_no
-        col1_df.set_index("code", inplace=True)
-        col2_df.set_index("code", inplace=True)
-        info_df = pd.concat([col1_df, col2_df], axis=1)
-        return info_df
