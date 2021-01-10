@@ -107,7 +107,7 @@ def fund_analysis(args):
     fund_dt.sort_values(by="rank", inplace=True, ascending=False)
 
     fund_dt.to_csv("report_all.csv")
-    fund_dt = fund_dt[0:50]
+    fund_dt = fund_dt[0:]
 
     fund_dt.to_csv("report_50.csv")
 

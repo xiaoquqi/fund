@@ -18,6 +18,7 @@ BASE_URL = "http://fund.eastmoney.com"
 FUND_LIST_URL = "%s/js/fundcode_search.js" % BASE_URL
 FUND_RANK_URL = "%s/data/rankhandler.aspx" % BASE_URL
 FUND_DETAIL_BASE_URL = "%s/f10" % BASE_URL
+RETRY_TIMES = 3
 
 DEFAULT_HEADERS = {
     "Referer": "http://fund.eastmoney.com/data/fundranking.html"
@@ -127,13 +128,21 @@ class FundInfo(object):
         fund_dt = None
         count = 0
         for fund_code in self.fund_codes:
-            fund_info = self._get_info(fund_code)
+            for i in range(RETRY_TIMES):
+                logging.info("Trying %s time(s) to get info..." % i)
+                try:
+                    fund_info = self._get_info(fund_code)
+                    break
+                except ConnectionResetError:
+                    logging.warning("Get connection reset error, "
+                                    "will retry to get... ")
             if count == 0:
                 fund_dt = fund_info
             else:
                 fund_dt = fund_dt.append(fund_info)
             count = count + 1
             logging.debug("Already got %s count funds." % count)
+            time.sleep(0.1)
 
         return fund_dt
 
@@ -182,7 +191,7 @@ class FundTsData(object):
 
     def _get_ts(self, fund_code):
         fund_info_url = "%s/tsdata_%s.html" % (FUND_DETAIL_BASE_URL,
-                                        fund_code)
+                                               fund_code)
         logging.debug("Getting date from %s" % fund_info_url)
         tables = pd.read_html(fund_info_url)
         df = tables[1]
