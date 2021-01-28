@@ -10,6 +10,7 @@ data like Sharpe Ratio on the web page.
 from datetime import datetime, timedelta
 import json
 import logging
+import time
 
 import pandas as pd
 import requests

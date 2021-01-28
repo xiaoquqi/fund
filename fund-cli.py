@@ -72,7 +72,7 @@ def parse_sys_args(argv):
     return parser.parse_args(argv[1:])
 
 def fund_collect(args):
-    fundrank = FundRank(ft="gp")
+    fundrank = FundRank(ft="all")
     fundrank_dt = fundrank.list()
     fundrank_dt.to_csv(FUNDRANK_CSV)
 
